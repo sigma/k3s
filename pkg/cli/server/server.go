@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	net2 "net"
 	"os"
 	"path/filepath"
@@ -10,11 +9,9 @@ import (
 
 	systemd "github.com/coreos/go-systemd/daemon"
 	"github.com/pkg/errors"
-	"github.com/rancher/k3s/pkg/agent"
 	"github.com/rancher/k3s/pkg/cli/cmds"
 	"github.com/rancher/k3s/pkg/datadir"
 	"github.com/rancher/k3s/pkg/netutil"
-	"github.com/rancher/k3s/pkg/rootless"
 	"github.com/rancher/k3s/pkg/server"
 	"github.com/rancher/k3s/pkg/token"
 	"github.com/rancher/wrangler/pkg/signals"
@@ -40,19 +37,8 @@ func run(app *cli.Context, cfg *cmds.Server) error {
 		err error
 	)
 
-	if !cfg.DisableAgent && os.Getuid() != 0 && !cfg.Rootless {
-		return fmt.Errorf("must run as root unless --disable-agent is specified")
-	}
-
-	if cfg.Rootless {
-		dataDir, err := datadir.LocalHome(cfg.DataDir, true)
-		if err != nil {
-			return err
-		}
-		cfg.DataDir = dataDir
-		if err := rootless.Rootless(dataDir); err != nil {
-			return err
-		}
+	if err = checkRootless(cfg); err != nil {
+		return err
 	}
 
 	if cfg.Token == "" && cfg.ClusterSecret != "" {
@@ -185,30 +171,7 @@ func run(app *cli.Context, cfg *cmds.Server) error {
 		return nil
 	}
 
-	ip := serverConfig.ControlConfig.BindAddress
-	if ip == "" {
-		ip = "127.0.0.1"
-	}
-
-	url := fmt.Sprintf("https://%s:%d", ip, serverConfig.ControlConfig.HTTPSPort)
-	token, err := server.FormatToken(serverConfig.ControlConfig.Runtime.AgentToken, serverConfig.ControlConfig.Runtime.ServerCA)
-	if err != nil {
-		return err
-	}
-
-	agentConfig := cmds.AgentConfig
-	agentConfig.Debug = app.GlobalBool("bool")
-	agentConfig.DataDir = filepath.Dir(serverConfig.ControlConfig.DataDir)
-	agentConfig.ServerURL = url
-	agentConfig.Token = token
-	agentConfig.DisableLoadBalancer = true
-	agentConfig.Rootless = cfg.Rootless
-	if agentConfig.Rootless {
-		// let agent specify Rootless kubelet flags, but not unshare twice
-		agentConfig.RootlessAlreadyUnshared = true
-	}
-
-	return agent.Run(ctx, agentConfig)
+	return runAgent(ctx, app, cfg, &serverConfig)
 }
 
 func knownIPs(ips []string) []string {

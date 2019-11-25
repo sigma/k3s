@@ -21,7 +21,6 @@ import (
 	"github.com/rancher/k3s/pkg/datadir"
 	"github.com/rancher/k3s/pkg/deploy"
 	"github.com/rancher/k3s/pkg/node"
-	"github.com/rancher/k3s/pkg/rootlessports"
 	"github.com/rancher/k3s/pkg/servicelb"
 	"github.com/rancher/k3s/pkg/static"
 	v1 "github.com/rancher/wrangler-api/pkg/generated/controllers/core/v1"
@@ -149,11 +148,7 @@ func masterControllers(ctx context.Context, sc *Context, config *Config) error {
 		return err
 	}
 
-	if !config.DisableServiceLB && config.Rootless {
-		return rootlessports.Register(ctx, sc.Core.Core().V1().Service(), config.ControlConfig.HTTPSPort)
-	}
-
-	return nil
+	return registerRootlessPorts(ctx, sc, config)
 }
 
 func stageFiles(ctx context.Context, sc *Context, controlConfig *config.Control) error {
